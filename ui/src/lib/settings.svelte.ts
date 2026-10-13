@@ -13,6 +13,8 @@ export const KEYS = {
   perPage: "aionLogs.encountersPerPage",
   /** Training fights listed among the encounters. */
   showTraining: "aionLogs.showTrainingFights",
+  /** What the encounter's chart draws: "moment" | "average". */
+  chartMode: "aionLogs.chartMode",
   /** Damage each buff adds, for rDPS: JSON, percent by buff key (see buffValues.ts). */
   buffValues: "aionLogs.buffValues",
   /** Global shortcuts, as labels like "Ctrl+Alt+R". */
@@ -27,6 +29,7 @@ const DEFAULTS: Record<string, string> = {
   [KEYS.width]: "500",
   [KEYS.perPage]: "20",
   [KEYS.showTraining]: "false",
+  [KEYS.chartMode]: "moment",
   [KEYS.buffValues]: "{}",
   [KEYS.resetHotkey]: "Ctrl+Alt+R",
   [KEYS.hideHotkey]: "Ctrl+Alt+Up",

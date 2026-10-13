@@ -38,6 +38,8 @@ function snapshot(): DpsData {
 const settings: Record<string, string> = {};
 // ?per=<n> previews the encounters-per-page setting.
 if (params.get("per")) settings["aionLogs.encountersPerPage"] = params.get("per")!;
+// ?chart=average previews the chart's other reading.
+if (params.get("chart")) settings["aionLogs.chartMode"] = params.get("chart")!;
 // ?w=<px> previews the meter at that width.
 if (params.get("w")) settings["aionLogs.meterWidth"] = params.get("w")!;
 

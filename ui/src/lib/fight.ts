@@ -190,6 +190,17 @@ export function dpsSeries(player: PlayerRow, durationMs: number, count: number):
   return out.map((v) => v / (slice / 1000));
 }
 
+/**
+ * Each player's average so far at the end of each of `count` equal slices:
+ * the damage dealt up to then over the time up to then. It ends on the
+ * fight's DPS, and shows an opening burst fading into it.
+ */
+export function averageDpsSeries(player: PlayerRow, durationMs: number, count: number): number[] {
+  const seconds = Math.max(1, durationMs) / count / 1000;
+  let dealt = 0;
+  return dpsSeries(player, durationMs, count).map((dps, i) => (dealt += dps * seconds) / ((i + 1) * seconds));
+}
+
 /** What the game said about the boss's health during a fight, when it was recorded. */
 export interface BossHealth {
   maxHp: number;

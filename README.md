@@ -57,8 +57,9 @@ Every boss fight is saved when it ends, numbered green for a kill and red for
 a wipe. Open one for:
 
 - **Damage**: each player's damage, DPS, rDPS, crit, back, perfect and double
-  rates, healing and damage taken, and a chart of DPS and the boss's health
-  over the fight.
+  rates, healing and damage taken, and a chart of the boss's health and DPS
+  over the fight: either how hard each player was hitting at each moment, or
+  their average so far, which shows an opening burst settling down.
 - **A player's skills**: click a player for damage, casts, average and biggest
   hit per skill.
 

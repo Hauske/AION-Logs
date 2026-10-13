@@ -1,6 +1,7 @@
 <script lang="ts">
-  import { bossHpLine, dpsSeries, healthAt, type BossHealth, type PlayerRow } from "../lib/fight";
+  import { averageDpsSeries, bossHpLine, dpsSeries, healthAt, type BossHealth, type PlayerRow } from "../lib/fight";
   import { abbr, castTime, clock } from "../lib/format";
+  import { getSetting, KEYS, setSetting } from "../lib/settings.svelte";
 
   // Without `boss`, or when its health is not known, there is no health line.
   let { players, durationMs, boss = null }: { players: PlayerRow[]; durationMs: number; boss?: BossHealth | null } = $props();
@@ -9,13 +10,23 @@
   const H = 240;
   const PAD = { l: 48, r: 44, t: 10, b: 22 };
 
-  // Left to right is time, start to end of the fight. Damage is averaged over
-  // equal slices of about 2s, at most 60 of them, each drawn at its middle;
-  // the boss's health is drawn where each reading fell.
+  // Two readings of the same damage. "moment": how hard each player was
+  // hitting at that point of the fight. "average": their damage so far over
+  // the time so far, which ends on the DPS column's number.
+  const average = $derived(getSetting(KEYS.chartMode) === "average");
+
+  // Left to right is time, start to end of the fight. Damage is taken over
+  // equal slices of about 2s, at most 60 of them: a slice's own DPS is drawn
+  // at its middle, the average so far at its end. The boss's health is drawn
+  // where each reading fell.
   const duration = $derived(Math.max(1, durationMs));
   const count = $derived(Math.max(1, Math.min(60, Math.round(duration / 2000))));
   const slice = $derived(duration / count);
-  const series = $derived(players.map((p) => ({ p, values: dpsSeries(p, duration, count) })));
+  /** Where in its slice a value sits, in slices. */
+  const within = $derived(average ? 1 : 0.5);
+  const series = $derived(
+    players.map((p) => ({ p, values: average ? averageDpsSeries(p, duration, count) : dpsSeries(p, duration, count) })),
+  );
   const hp = $derived(boss ? bossHpLine(players, duration, boss) : null);
   const peak = $derived(Math.max(1, ...series.flatMap((s) => s.values)));
 
@@ -24,18 +35,18 @@
   const yShare = (share: number) => H - PAD.b - share * (H - PAD.t - PAD.b);
   const at2 = (px: number, py: number) => `${px.toFixed(1)},${py.toFixed(1)}`;
 
-  // Held level from the first slice's middle back to the start, and from the
-  // last one's on to the end, so the line spans the fight.
+  // Held level from the first value back to the start, and from the last one
+  // on to the end, so the line spans the fight.
   const dpsLine = (values: number[]) =>
     [
       at2(x(0), y(values[0])),
-      ...values.map((v, i) => at2(x((i + 0.5) * slice), y(v))),
+      ...values.map((v, i) => at2(x((i + within) * slice), y(v))),
       at2(x(duration), y(values[values.length - 1])),
     ].join(" ");
 
   /** What the drawn line reads at `t`. */
   function dpsAt(values: number[], t: number): number {
-    const pos = t / slice - 0.5;
+    const pos = t / slice - within;
     if (pos <= 0) return values[0];
     if (pos >= values.length - 1) return values[values.length - 1];
     const i = Math.floor(pos);
@@ -91,6 +102,23 @@
   {#if hp}
     <span><i class="hp"></i>Boss HP</span>
   {/if}
+  <span class="grow"></span>
+  <div class="mode">
+    <button
+      class:on={!average}
+      title="How hard each player was hitting at that point of the fight"
+      onclick={() => setSetting(KEYS.chartMode, "moment")}
+    >
+      At the moment
+    </button>
+    <button
+      class:on={average}
+      title="Each player's damage so far over the time so far: how an opening burst settles into the DPS they end on"
+      onclick={() => setSetting(KEYS.chartMode, "average")}
+    >
+      Average so far
+    </button>
+  </div>
 </div>
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -137,7 +165,7 @@
       {#if at.unlisted > 0}
         <div class="row more"><i></i><span>{at.unlisted} more</span></div>
       {/if}
-      <div class="row total"><i></i><span>Raid DPS</span><b>{abbr(at.total)}</b></div>
+      <div class="row total"><i></i><span>{average ? "Raid average" : "Raid DPS"}</span><b>{abbr(at.total)}</b></div>
     </div>
   {/if}
 </div>
@@ -151,10 +179,39 @@
     font-size: 12px;
     color: var(--muted);
   }
+  .legend {
+    align-items: center;
+  }
   .legend span {
     display: flex;
     align-items: center;
     gap: 6px;
+  }
+  .legend .grow {
+    flex: 1;
+  }
+  .mode {
+    display: flex;
+    border: 1px solid var(--line);
+    border-radius: 5px;
+    overflow: hidden;
+    flex: none;
+  }
+  .mode button {
+    padding: 3px 10px;
+    color: var(--muted);
+    font-size: 12px;
+  }
+  .mode button + button {
+    border-left: 1px solid var(--line);
+  }
+  .mode button:hover {
+    color: var(--text);
+  }
+  .mode button.on {
+    color: var(--text);
+    background: var(--panel-2);
+    box-shadow: inset 0 -2px 0 var(--accent);
   }
   i {
     display: inline-block;
