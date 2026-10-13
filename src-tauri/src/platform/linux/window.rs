@@ -151,6 +151,10 @@ pub fn start_drag(window: &tauri::WebviewWindow) {
     let _ = window.start_dragging();
 }
 
+pub fn is_foreground(window: &tauri::WebviewWindow) -> bool {
+    window.is_focused().unwrap_or(false)
+}
+
 pub fn show_on_top_without_focus(window: &tauri::WebviewWindow) {
     let _ = window.show();
     let _ = window.set_always_on_top(true);

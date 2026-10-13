@@ -49,6 +49,14 @@ pub struct FightRecord {
     /// log service's output change.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub buffs: Option<Vec<crate::combat::fight_buffs::BuffTrack>>,
+    /// AION Logs: the boss's health as the game reported it, as
+    /// `[ms since the fight began, hp]` pairs. Empty when the capture saw no
+    /// readings, and in fights saved before this was recorded.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub hp_history: Vec<(i64, i32)>,
+    /// AION Logs: the game reported the boss dead. `None` in older fights.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub killed: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -79,6 +87,11 @@ pub struct FightSummary {
     /// for two Clerics where `jobs` has one.
     #[serde(default)]
     pub member_jobs: Vec<String>,
+    /// AION Logs: "clear" when the damage recorded on the boss covers its
+    /// health, "wipe" when it falls short, "" when its health is not known.
+    /// Worked out from the damage because no packet says how a fight ended.
+    #[serde(default)]
+    pub outcome: String,
 }
 
 impl FightRecord {

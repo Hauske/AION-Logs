@@ -27,6 +27,10 @@ pub struct PersonalData {
     /// meter anybody should trust.
     #[serde(default)]
     pub is_supporter: bool,
+    /// AION Logs: on the party roster, for the meter's Me / Party / Everyone
+    /// filter. Joined on the character name, as `combat_power` is.
+    #[serde(default)]
+    pub in_party: bool,
 }
 
 impl PersonalData {
@@ -40,6 +44,7 @@ impl PersonalData {
             nickname,
             combat_power: 0,
             is_supporter: false,
+            in_party: false,
         }
     }
 
@@ -53,6 +58,7 @@ impl PersonalData {
             nickname,
             combat_power: 0,
             is_supporter: false,
+            in_party: false,
         }
     }
 

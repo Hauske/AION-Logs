@@ -29,6 +29,10 @@ pub struct DetailsActorSummary {
     /// World/server id, the top 16 bits of `dbid`. 0 when unknown.
     #[serde(default)]
     pub server_id: u16,
+    /// AION Logs: this actor is the player who recorded the fight. Names are
+    /// saved in full, so the name no longer tells them apart.
+    #[serde(default)]
+    pub is_local: bool,
     /// Renders this name gold in the Details party bars. See
     /// `crate::supporters`; cosmetic only.
     #[serde(default)]
@@ -113,6 +117,10 @@ pub struct DetailSkillEntry {
     pub is_dot: bool,
     #[serde(default)]
     pub hit_timestamps: Vec<i64>,
+    /// AION Logs: each hit's damage, in step with `hit_timestamps`. Empty in
+    /// fights saved before it was recorded.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub hit_damages: Vec<i32>,
     #[serde(default)]
     pub specs: Vec<bool>,
 }

@@ -471,6 +471,7 @@ impl DpsCalculator {
                 .get(&data.nickname)
                 .map(|m| m.combat_power)
                 .unwrap_or(0);
+            data.in_party = party_members.contains_key(&data.nickname);
             if data.job.is_empty() {
                 if local_ids.as_ref().is_some_and(|ids| ids.contains(&uid)) {
                     // A class seen earlier this session survives a reset
@@ -582,6 +583,7 @@ impl DpsCalculator {
                 .or_else(|| self.cached_job(name))
                 .unwrap_or_else(|| "Unknown".to_string());
             entry.combat_power = member.combat_power;
+            entry.in_party = true;
             dps_data.map.entry(uid).or_insert(entry);
         }
     }
@@ -627,8 +629,11 @@ impl DpsCalculator {
                 let us = self.our_side();
                 let boss_targets: Vec<_> = combat_data.iter()
                     .filter(|&(&tid, td)| {
-                        mob_data.get(&tid).is_some_and(|&mob_code| self.npc_lookup.is_boss(mob_code))
-                            && self.fight_is_ours(td, &us, false)
+                        mob_data.get(&tid).is_some_and(|&mob_code| {
+                            // A few scarecrows are flagged as bosses; they
+                            // belong to training mode only.
+                            self.npc_lookup.is_boss(mob_code) && !self.npc_lookup.is_training_dummy(mob_code)
+                        }) && self.fight_is_ours(td, &us, false)
                     })
                     .map(|(&tid, _)| tid)
                     .collect();
@@ -638,38 +643,12 @@ impl DpsCalculator {
                 {
                     let name = self.resolve_target_name(best);
                     (HashSet::from([best]), name, best)
-                } else if self.data_storage.current_dungeon_id() > 0 {
-                    // No boss yet in a dungeon: show nothing. Every mob in an
-                    // instance is on the way to a boss, so the fallback below
-                    // put the first trash pull of each run on the meter.
-                    (HashSet::new(), String::new(), 0)
                 } else {
-                    // No boss: the mob with the most damage that you or your
-                    // party hit, and nothing until the meter knows who you
-                    // are. Any mob within range used to count then, and in
-                    // the open world that put strangers fighting their own
-                    // mobs on your meter (2026-10-04: one player, then
-                    // another, each alone on a mob you never touched), and
-                    // still did for the seconds after opening the meter or
-                    // entering a zone, before you were identified.
-                    let ours = self.resolve_local_ids(summon_data).map(|mut ids| {
-                        let party = self.data_storage.get_party_members();
-                        ids.extend(nickname_data.iter()
-                            .filter(|(_, name)| party.contains_key(name.as_str()))
-                            .map(|(&id, _)| id));
-                        ids
-                    });
-                    let best = ours.as_ref().and_then(|ids| combat_data.iter()
-                        .filter(|(_, td)| td.actors.keys()
-                            .any(|&a| ids.contains(&summon_resolver::resolve(a, summon_data))))
-                        .max_by_key(|(_, td)| td.total_damage));
-                    match best {
-                        Some((&id, _)) => {
-                            let name = self.resolve_target_name(id);
-                            (HashSet::from([id]), name, id)
-                        }
-                        None => (HashSet::new(), String::new(), 0),
-                    }
+                    // AION Logs: no boss, no meter. Upstream shows nothing
+                    // only inside a dungeon and falls back to the most-damaged
+                    // mob in the open world, which put every trash pull on a
+                    // meter that then never saved it.
+                    (HashSet::new(), String::new(), 0)
                 }
             }
             TargetSelectionMode::AllTargets => {
@@ -955,11 +934,10 @@ impl DpsCalculator {
             let local_id = self.data_storage.local_player_id().unwrap_or(-1) as i32;
             let actors: Vec<DetailsActorSummary> = record_actors.iter()
                 .map(|(&id, (nick, job))| {
-                    let display_nick = if id == local_id {
-                        nick.clone()
-                    } else {
-                        crate::entity::fight_record::obscure_nickname(nick)
-                    };
+                    // AION Logs: names are saved in full. Upstream masked
+                    // everyone but the local player, for the logs it uploads;
+                    // these records never leave this computer.
+                    let display_nick = nick.clone();
                     let job_class = JobClass::convert_from_skill(
                         details.skills.iter()
                             .find(|s| s.actor_id == id && !s.job.is_empty())
@@ -976,13 +954,12 @@ impl DpsCalculator {
                             hits_recv += ad.hits_received;
                         }
                     }
-                    // Joined on the unobscured nickname: the roster is keyed by
-                    // name, and `display_nick` above has already been masked for
-                    // everyone but the local player.
+                    // The roster is keyed by name.
                     let roster = party_members.get(nick.as_str());
                     DetailsActorSummary {
                         actor_id: id,
                         nickname: display_nick,
+                        is_local: id == local_id,
                         job: job.clone(),
                         job_id: job_class.map(|j| j.class_prefix()).unwrap_or(0),
                         party_heal,
@@ -1043,6 +1020,20 @@ impl DpsCalculator {
                 dungeon_id: fight_dungeon(&self.npc_lookup, mob_code, roster_dungeon),
                 server_id: self.data_storage.fight_server_id(),
                 buffs: Some(buffs),
+                // Thinned to one reading per 250ms: the chart draws far fewer.
+                hp_history: {
+                    let start = target_data.first_damage_time;
+                    let mut kept: Vec<(i64, i32)> = Vec::new();
+                    for (at, hp) in self.data_storage.get_mob_hp_history(target_id) {
+                        let t = (at - start).max(0);
+                        match kept.last_mut() {
+                            Some(last) if t - last.0 < 250 => last.1 = hp,
+                            _ => kept.push((t, hp)),
+                        }
+                    }
+                    kept
+                },
+                killed: Some(self.data_storage.is_entity_dead(target_id)),
             };
 
             if is_ended {
@@ -1191,6 +1182,7 @@ impl DpsCalculator {
                 DetailsActorSummary {
                     actor_id: id,
                     nickname: nick.clone(),
+                    is_local: false,
                     job: job.clone(),
                     job_id,
                     party_heal,
@@ -1449,6 +1441,7 @@ impl DpsCalculator {
                     job,
                     is_dot,
                     hit_timestamps: Vec::new(),
+                    hit_damages: Vec::new(),
                     specs: skill_data.spec_flags.to_vec(),
                 });
 
@@ -1476,6 +1469,15 @@ impl DpsCalculator {
                 entry.resist += skill_data.resist_count;
                 entry.regen = entry.regen.saturating_add(skill_data.heal_amount);
                 // Add timestamps relative to fight start
+                // Damages only while every hit so far has one: the two lists
+                // are read as pairs.
+                if skill_data.hit_damages.len() == skill_data.hit_timestamps.len()
+                    && entry.hit_damages.len() == entry.hit_timestamps.len()
+                {
+                    entry.hit_damages.extend_from_slice(&skill_data.hit_damages);
+                } else {
+                    entry.hit_damages.clear();
+                }
                 for &ts in &skill_data.hit_timestamps {
                     entry.hit_timestamps.push(ts - fight_start);
                 }
@@ -1553,6 +1555,7 @@ impl DpsCalculator {
                     job,
                     is_dot: is_hot,
                     hit_timestamps: Vec::new(),
+                    hit_damages: Vec::new(),
                     specs: Vec::new(),
                 });
                 entry.dmg = entry.dmg.saturating_add(hd.total_heal.min(i32::MAX as i64) as i32);
@@ -1677,10 +1680,26 @@ mod tests {
         full.max_hp = 0;
         full.heal_skills.clear();
         full.ping_history.clear();
-        for skill in &mut full.skills { skill.hit_timestamps.clear(); }
+        for skill in &mut full.skills { skill.hit_timestamps.clear(); skill.hit_damages.clear(); }
         full.skills.sort_by_key(|s| (s.actor_id, s.code, s.is_dot));
         summary.skills.sort_by_key(|s| (s.actor_id, s.code, s.is_dot));
         assert_eq!(serde_json::to_value(full).unwrap(), serde_json::to_value(summary).unwrap());
+    }
+
+    #[test]
+    fn each_hit_keeps_its_damage_beside_its_time() {
+        let storage = Arc::new(DataStorage::new());
+        storage.set_local_player_id(Some(2259));
+        for (at, damage) in [(1_000, 500), (1_300, 900), (1_600, 200)] {
+            let mut p = hit(2259, 50_000, at);
+            p.set_damage(damage);
+            storage.append_damage(p);
+        }
+        let details = meter(&storage).get_target_details(50_000, None);
+        let skill = &details.skills[0];
+        assert_eq!(skill.hit_timestamps, vec![0, 300, 600]);
+        assert_eq!(skill.hit_damages, vec![500, 900, 200]);
+        assert_eq!(skill.hit_damages.iter().sum::<i32>(), skill.dmg);
     }
 
     #[test]
@@ -1769,19 +1788,20 @@ mod tests {
 
     #[test]
     fn displayed_rows_keep_their_detail_targets_until_reset() {
+        // A boss: nothing else is ever displayed (see `boss_meter`).
         let storage = Arc::new(DataStorage::new());
         storage.set_local_player_id(Some(2259));
-        storage.append_damage(hit(2259, 50_000, 1_000));
-        let mut calc = meter(&storage);
+        storage.append_damage(hit(2259, 44_090, 1_000));
+        let mut calc = boss_meter(&storage);
         let shown = calc.get_dps();
-        assert_eq!(shown.detail_target_ids, vec![50_000]);
-        assert!(!calc.get_target_details(50_000, Some(&[2259])).skills.is_empty());
+        assert_eq!(shown.detail_target_ids, vec![44_090]);
+        assert!(!calc.get_target_details(44_090, Some(&[2259])).skills.is_empty());
 
         calc.set_target_selection_mode("trainTargets");
         let retained = calc.get_dps();
         assert_eq!(retained.target_id, 0);
         assert!(!retained.map.is_empty());
-        assert_eq!(retained.detail_target_ids, vec![50_000]);
+        assert_eq!(retained.detail_target_ids, vec![44_090]);
 
         calc.restart_target_selection(true);
         let reset = calc.get_dps();
@@ -1899,17 +1919,18 @@ mod tests {
     }
 
     #[test]
-    fn boss_mode_shows_your_trash_mob_in_the_open_world_only() {
+    fn boss_mode_never_shows_a_trash_mob() {
+        // AION Logs: upstream puts your own trash mob up in the open world;
+        // here a mob that is not a boss is not shown anywhere.
         let open_world = Arc::new(DataStorage::new());
         open_world.set_local_player_id(Some(2259));
         open_world.append_damage(hit(2259, 50_000, 1_000));
-        // A stranger alone on a bigger fight of their own stays off the meter.
         for t in 0..5 {
             open_world.append_damage(hit(11_345, 60_000, 1_000 + t));
         }
         let shown = meter(&open_world).get_dps();
-        assert_eq!(shown.target_id, 50_000);
-        assert_eq!(shown.map.keys().copied().collect::<Vec<_>>(), vec![2259]);
+        assert_eq!(shown.target_id, 0);
+        assert!(shown.map.is_empty());
 
         // Before you are identified (a meter just opened, a new zone), no
         // mob is anyone's: a stranger's fight is not put up in your place.
@@ -1956,9 +1977,11 @@ mod tests {
         for (i, stranger) in [2653, 15468, 13179].into_iter().enumerate() {
             storage.append_damage(hit(stranger, 44_090, 2_000 + i as i64));
         }
+        // AION Logs: neither your trash mob (upstream shows it) nor a
+        // stranger's boss.
         let shown = calc.get_dps();
-        assert_eq!(shown.target_id, 51_473, "your mob, not a stranger's boss");
-        assert_eq!(shown.map.keys().copied().collect::<Vec<_>>(), vec![7983]);
+        assert_eq!(shown.target_id, 0, "no trash mob, and not a stranger's boss");
+        assert!(shown.map.is_empty());
 
         // Only strangers on the boss and nothing of yours: nothing at all.
         let alone = Arc::new(DataStorage::new());

@@ -261,7 +261,17 @@ fn canonicalise(record: &mut FightRecord) {
     for list in [&mut record.details.skills, &mut record.details.heal_skills] {
         list.sort_by_key(key);
         for s in list.iter_mut() {
-            s.hit_timestamps.sort_unstable();
+            if s.hit_damages.len() == s.hit_timestamps.len() {
+                let mut hits: Vec<(i64, i32)> = std::mem::take(&mut s.hit_timestamps)
+                    .into_iter()
+                    .zip(std::mem::take(&mut s.hit_damages))
+                    .collect();
+                hits.sort_unstable();
+                (s.hit_timestamps, s.hit_damages) = hits.into_iter().unzip();
+            } else {
+                s.hit_damages.clear();
+                s.hit_timestamps.sort_unstable();
+            }
         }
     }
     record.actors.sort_by_key(|a| a.actor_id);

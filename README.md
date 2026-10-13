@@ -1,138 +1,146 @@
-# A2Tools DPS Meter
+# AION Logs
 
-[![License](https://img.shields.io/badge/License-GPL--3.0-blue.svg)](LICENSE)
-[![GitHub Issues](https://img.shields.io/github/issues/taengu/A2Tools-DPS-Meter)](https://github.com/taengu/A2Tools-DPS-Meter/issues)
-[![GitHub Pull Requests](https://img.shields.io/github/issues-pr/taengu/A2Tools-DPS-Meter)](https://github.com/taengu/A2Tools-DPS-Meter/pulls)
+A DPS meter for AION 2 in the style of [LOA Logs](https://github.com/snoww/loa-logs):
+a small overlay that shows the boss fight you are in, and a logs window that
+keeps every encounter so you can go back through the damage, each player's
+skills, their rotation, the buffs and how the fight went over time.
 
-Real-time DPS meter overlay for AION 2. Captures game network packets to display damage, skills, and combat statistics.
+![The encounter page: damage per player and DPS over time](docs/screenshots/damage.png)
 
-The **[AION 2 DPS Meter website, a2tools.app](https://a2tools.app)** has the download, shared fight logs, leaderboards and class stats.
+## Install
 
-**[Download Latest Release](https://github.com/taengu/A2Tools-DPS-Meter/releases)** | **[A2Tools.app](https://a2tools.app)**
+1. Download `AION-Logs_x.y.z_x64.msi` from the
+   [latest release](https://github.com/Hauske/AION-Logs/releases/latest) and run it.
+2. Windows shows "Windows protected your PC", because the installer is not
+   signed. Click **More info**, then **Run anyway**.
+3. Start **AION Logs** as administrator. It reads the game's network traffic,
+   and Windows only allows that for an administrator.
+4. The first time, it offers to install [Npcap](https://npcap.com), the driver
+   it reads the traffic with. Say yes and go through Npcap's installer.
 
-[한국어](README_KO.md) | [简体中文](README_ZH.md) | [繁體中文](README_ZH-TW.md)
+Windows 10 or 11. Start the meter before you log in to a character: the game
+sends player names when you enter the world, and a meter started later shows
+numbers in their place until you change zone.
 
-## Features
+### Updates
 
-- Real-time DPS tracking with per-player breakdown
-- Skill-level damage analysis with crit, back attack, parry, double, and perfect rates, plus optional block, perfect block, endurance, regeneration, miss and resist columns
-- DOT (damage over time) tracking
-- Summon damage merged with owner
-- Multiple target selection modes (Boss, Last Hit, All Targets, Train)
-- DPS chart and timeline visualization
-- Battle history with auto-save for boss fights
-- Ping monitoring
-- Ten languages: English, Korean, Chinese (Traditional and Simplified), Japanese, German, French, Spanish, Portuguese and Russian
-- Always-on-top transparent overlay
-- Themes and customization
-- Stream overlay for OBS on another PC: add the meter as a Browser Source, and choose the name shown for you
-- Fight uploads to [a2tools.app](https://a2tools.app/logs): a link to share, leaderboards and class stats
-- Windows and Linux ([Linux guide](docs/linux.md))
+When the meter starts it looks for a newer release here on GitHub. If there is
+one it asks, and on a yes it downloads the installer, checks it against the
+release's checksum, installs it and reopens. Settings → **Check now** does the
+same on demand.
 
-## Requirements
+## What it shows
 
-**Windows**
+### The meter
 
-- **Windows 10/11** (x86_64)
-- **[Npcap](https://npcap.com)** — required for packet capture
-  - During Npcap installation, check **"Install Npcap in WinPcap API-compatible Mode"**
-- **Administrator privileges** — required for raw packet capture
+![The meter](docs/screenshots/meter.png)
 
-**Linux** (playing through Proton)
+Sits on top of the game and only shows boss fights. Per player: damage, DPS,
+share of the damage, crit and back attack rates. The header has the fight's
+time, the boss's health and how long it has left to live at the rate its
+health is falling. Drag its right edge to resize it; switch between yourself,
+your party and everyone at the bottom.
 
-- **64-bit (x86_64) with WebKitGTK 4.1:** Ubuntu 22.04 or newer, Debian 12, Fedora 39 or newer, openSUSE, current Arch, CachyOS, Manjaro or EndeavourOS, Bazzite and other image-based Fedoras, or Steam Deck (SteamOS, through distrobox)
-- Packages and setup for each: the **[Linux guide](docs/linux.md)**
+| Shortcut | Does |
+|---|---|
+| `Ctrl+Alt+Up` | Hide or show the meter |
+| `Ctrl+Alt+R` | Reset: save the fight in progress and start over |
 
-## Installation
+Both can be changed in Settings.
 
-1. Install [Npcap](https://npcap.com) with WinPcap API-compatible mode enabled
-2. Download the latest MSI installer from [Releases](https://github.com/taengu/A2Tools-DPS-Meter/releases)
-3. Run the installer
-4. Launch A2Tools DPS Meter (run as Administrator)
+### Encounters
 
-**Linux:** packages for Ubuntu/Debian (.deb), Fedora/openSUSE (.rpm), Bazzite, Arch/CachyOS/Manjaro and Steam Deck — see the **[Linux guide](docs/linux.md)**.
+![The list of encounters](docs/screenshots/encounters.png)
 
-[![Ubuntu](https://img.shields.io/badge/Ubuntu-E95420?logo=ubuntu&logoColor=white)](docs/linux.md#ubuntu-debian-linux-mint-pop_os) [![Debian](https://img.shields.io/badge/Debian-A81D33?logo=debian&logoColor=white)](docs/linux.md#ubuntu-debian-linux-mint-pop_os) [![Linux Mint](https://img.shields.io/badge/Linux_Mint-87CF3E?logo=linuxmint&logoColor=white)](docs/linux.md#ubuntu-debian-linux-mint-pop_os) [![Pop!_OS](https://img.shields.io/badge/Pop%21__OS-48B9C7?logo=popos&logoColor=white)](docs/linux.md#ubuntu-debian-linux-mint-pop_os) [![Fedora](https://img.shields.io/badge/Fedora-51A2DA?logo=fedora&logoColor=white)](docs/linux.md#fedora) [![Bazzite](https://img.shields.io/badge/Bazzite-8A3FFC?logo=fedora&logoColor=white)](docs/linux.md#bazzite-silverblue-kinoite-aurora-bluefin) [![Steam Deck](https://img.shields.io/badge/Steam_Deck-1A9FFF?logo=steamdeck&logoColor=white)](docs/linux.md#steam-deck-steamos) [![openSUSE](https://img.shields.io/badge/openSUSE-73BA25?logo=opensuse&logoColor=white)](docs/linux.md#opensuse) [![Arch](https://img.shields.io/badge/Arch-1793D1?logo=archlinux&logoColor=white)](docs/linux.md#cachyos-arch-manjaro-endeavouros) [![CachyOS](https://img.shields.io/badge/CachyOS-08A88A?logo=cachyos&logoColor=white)](docs/linux.md#cachyos-arch-manjaro-endeavouros) [![Manjaro](https://img.shields.io/badge/Manjaro-35BF5C?logo=manjaro&logoColor=white)](docs/linux.md#cachyos-arch-manjaro-endeavouros) [![EndeavourOS](https://img.shields.io/badge/EndeavourOS-7F3FBF?logo=endeavouros&logoColor=white)](docs/linux.md#cachyos-arch-manjaro-endeavouros)
+Every boss fight is saved when it ends, numbered green for a kill and red for
+a wipe. Open one for:
 
-## Streaming from another PC (OBS)
+- **Damage**: each player's damage, DPS, rDPS, crit, back, perfect and double
+  rates, healing and damage taken, and a chart of DPS and the boss's health
+  over the fight.
+- **A player's skills**: click a player for damage, casts, average and biggest
+  hit per skill.
 
-If OBS runs on a second PC, it cannot capture the meter's window on the game PC. The meter can serve its display over your home network instead:
+  ![One player's skills](docs/screenshots/skills.png)
 
-1. On the game PC, open **Settings → Streaming** and turn on **Stream overlay (OBS on another PC)**. The default port is 18731; change it if something else uses it.
-2. The first time, Windows Defender Firewall asks whether to allow the meter. Allow it on **Private networks** (your home network). The meter never adds a firewall rule by itself.
-3. Copy the URL shown (`http://<game PC's LAN IP>:18731/overlay?key=<key>`). If the PC has more than one network address, each is listed; use the one on the same network as the streaming PC.
-4. In OBS on the streaming PC, add a **Browser Source** with that URL. The background is transparent, and the rows scale with the source's width.
+- **Rotation**: the order each player used their skills in.
 
-The overlay shows the boss, the fight timer and the rows the meter shows (name, class, DPS, damage, share), and updates a few times a second. It is read-only and only reachable with the key; **New key** cuts off every link handed out before. Add `&lang=ko` (or `en`, `de`, `ja`, …) to the URL to change the language of its few labels. Add `&rows=5` to show at most five rows, so they always fit the height you gave the source (about 0.43 × its width for five rows, plus 0.07 × width for each more); you stay on it, in the last row if you are below the cut. **Your name on stream** sets the name the overlay shows for you; leave it blank to show your character name. Turn the setting off and the meter stops listening.
+  ![Rotation](docs/screenshots/rotation.png)
 
-## Building from Source
+- **Party Buffs, Self Buffs, Boss Debuffs**: for every effect, how much of
+  each player's damage was dealt while it was on, and who applied it.
 
-### Prerequisites
+  ![Party buffs](docs/screenshots/buffs.png)
 
-- [Rust](https://rustup.rs/) (latest stable)
-- [Node.js](https://nodejs.org/) (v18+)
-- [Npcap](https://npcap.com) installed
+### rDPS
 
-### Build
+DPS counts a hit for whoever landed it. rDPS moves the part of a hit that a
+buff added to whoever applied the buff, so a support shows what they brought
+to the party and a damage dealer what they did on their own. The raid's total
+stays the same.
+
+It is an estimate. The game does not say how much a buff adds, and that grows
+with the skill's level, so the percentages are yours to set: in the Party
+Buffs and Boss Debuffs tabs, the bottom row has a box under each effect. A few
+start filled in with the skills' level 1 tooltips; an effect with no number
+moves nothing.
+
+## How it works
+
+The game client and the server talk over the network. AION Logs listens to
+that traffic on your own computer through Npcap, picks out the combat messages
+(who hit what, with which skill, for how much, which buffs went on and off)
+and adds them up. It does not read or change the game's memory or files, and
+it sends nothing to the game.
+
+Everything it records stays on your computer, in
+`%APPDATA%\com.aionlogs.meter`. The only connections it makes are to GitHub
+(to look for a newer version), to the game's own image server (skill icons)
+and to npcap.com (only if Npcap is missing and you agree to install it).
+
+Reading the game's traffic is not something NCSOFT has said it allows. AION
+Logs is not affiliated with or endorsed by NCSOFT; use it at your own risk.
+
+## Credits
+
+- **[A2Tools DPS Meter](https://github.com/taengu/A2Tools-DPS-Meter)** by
+  taengu. AION Logs is a fork of it: the packet capture, the decoding of the
+  game's messages and the combat bookkeeping (everything in `src-tauri/`) are
+  A2Tools' work, with small changes. If this meter is useful to you, that
+  project is the reason it exists.
+- **[LOA Logs](https://github.com/snoww/loa-logs)** by snoww, the Lost Ark
+  meter the interface is modelled on: the layout of the meter and the
+  encounter pages, and the idea of rDPS as it is shown here.
+
+## Licence
+
+GPL-3.0, like A2Tools DPS Meter. See [LICENSE](LICENSE).
+
+## Building it yourself
+
+Needs [Rust](https://rustup.rs/), the Visual Studio C++ Build Tools and Node.js 18+.
 
 ```bash
 npm install
 npm run tauri build
 ```
 
-The MSI installer will be at `src-tauri/target/release/bundle/msi/`.
+The installer is written to `src-tauri/target/release/bundle/msi/`, the
+program itself to `src-tauri/target/release/aion-logs.exe`. `release.ps1`
+builds a release: the installer and the `latest.json` that installed copies
+read to find it.
 
-### Development
+### Working on the interface
 
-```bash
-npm run tauri dev
-```
+`npm run dev` serves the interface in a browser at http://localhost:1420
+without the game. It answers from saved fights copied into `ui/mock/` (from
+`%APPDATA%\com.aionlogs.meter\history`). `?view=main` is the meter and
+`?view=history` the logs window.
 
-## FAQ
+### Layout
 
-**Q: The meter shows "Detecting AION2 connection..."**
-A: Make sure AION 2 is running and the app has administrator privileges. If using a VPN or ping reducer, the app will detect the loopback adapter automatically.
-
-**Q: My name doesn't appear on the meter**
-A: Enter your character name and actor ID in Settings. The name is auto-detected from the AION 2 window title.
-
-**Q: Npcap is installed but capture doesn't work**
-A: Reinstall Npcap and ensure "WinPcap API-compatible Mode" is checked during installation.
-
-## Community
-
-- [Discord](https://discord.gg/Aion2Global)
-- [A2Tools.app](https://a2tools.app)
-
-### Building your own meter?
-
-Your meter can upload its logs to [a2tools.app](https://a2tools.app/logs) as well. The site stores them, gives each one a link to share, and puts them on the leaderboard and in its stats. To connect yours, join the [Discord](https://discord.gg/Aion2Global) and post in **#aion2-dpsmeter**.
-
-## Support
-
-Say thanks and fund new cool projects & features!
-
-- <img src="wechat.png" width="150">
-- ☕ [Buy me a Coffee](https://ko-fi.com/hiddencube)
-- ☕ [在爱发电支持我](https://afdian.com/a/hiddencube)
-- 🅿️ [Send with PayPal](https://www.paypal.me/taengoo)
-- 🎁 [Donate with Crypto](https://nowpayments.io/donation/thehiddencube)
-- **BTC**: `1GexKhgVZPYRqpfCKydXLoNUXRRRUoAUwT`
-- **ETH**: `0x38F0bc371A563A24eCa6034cFf77eB6173c7e3e7`
-- **USDC**: `0xA9571Fc95666350f6DFFB8Fb80ee27eE7db46b56`
-
-## License
-
-[GPL-3.0](LICENSE)
-
-### Fixes from Daevalog
-
-Some parser and storage fixes come from [Daevalog](https://github.com/Seralth/Daevalog), Seralth's GPL-3.0 fork of this meter. Each one is committed under Seralth's name, with a `Ported-from:` line naming the original commit. The buff and debuff parser (`src-tauri/src/capture/abnormal.rs`) and its data tables (`src/data/abnormals.json`, `src/data/i18n/abnormals/`) come from there too.
-
-### Fonts
-
-The meter comes with these fonts. Each is under the SIL Open Font License, version 1.1.
-
-- Noto Sans SC: [public/vendor/fonts/noto-sans-sc/LICENSE](public/vendor/fonts/noto-sans-sc/LICENSE)
-- Noto Sans TC: [public/vendor/fonts/noto-sans-tc/LICENSE](public/vendor/fonts/noto-sans-tc/LICENSE)
-- Pretendard: [public/vendor/fonts/pretendard/LICENSE](public/vendor/fonts/pretendard/LICENSE)
+- `ui/` the interface (Svelte)
+- `src-tauri/` the backend (Rust, from A2Tools)
+- `src/data/` game data tables (skills, buffs, NPCs)
+- `docs/`, `packaging/`, `log-service/` A2Tools' material, kept so its updates
+  merge cleanly

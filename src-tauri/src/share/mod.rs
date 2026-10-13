@@ -457,6 +457,8 @@ mod tests {
             dungeon_id: 600093,
             server_id: 0,
             buffs: None,
+            hp_history: Vec::new(),
+            killed: None,
         }
     }
 
@@ -464,6 +466,7 @@ mod tests {
         DetailsActorSummary {
             actor_id: id,
             nickname: nickname.into(),
+            is_local: false,
             job: "Sorcerer".into(),
             job_id: 15,
             party_heal: 0,

@@ -1,18 +1,27 @@
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use tracing::{info, warn};
 
 /// Global hotkey manager using Win32 RegisterHotKey.
 /// Runs its own message loop thread to receive WM_HOTKEY messages.
+/// Bindings changed in settings, waiting for the listener thread: a hotkey can
+/// only be registered from the thread that receives it.
+static REBINDS: Mutex<Vec<(i32, u32, u32)>> = Mutex::new(Vec::new());
+
 pub struct HotkeyManager {
     running: Arc<AtomicBool>,
 }
 
 impl HotkeyManager {
-    const HOTKEY_RELOAD: i32 = 1;
-    const HOTKEY_TOGGLE: i32 = 2;
-    const HOTKEY_LOCK: i32 = 3;
+    pub const HOTKEY_RELOAD: i32 = 1;
+    pub const HOTKEY_TOGGLE: i32 = 2;
+    pub const HOTKEY_LOCK: i32 = 3;
+
+    /// Move a running hotkey to another key combination.
+    pub fn rebind(id: i32, mods: u32, vk: u32) {
+        REBINDS.lock().unwrap().push((id, mods, vk));
+    }
 
     pub fn new() -> Self {
         Self {
@@ -93,6 +102,23 @@ impl HotkeyManager {
                 // Message loop
                 let mut msg = MSG::default();
                 while running.load(Ordering::SeqCst) {
+                    let rebinds = std::mem::take(&mut *REBINDS.lock().unwrap());
+                    for (id, mods, vk) in rebinds {
+                        let _ = UnregisterHotKey(None, id);
+                        let ok = RegisterHotKey(None, id, HOT_KEY_MODIFIERS(mods | norepeat), vk).is_ok();
+                        if ok {
+                            info!("Hotkey {} rebound: mods={:#x} vk={:#x}", id, mods, vk);
+                        } else {
+                            warn!("Hotkey {} unavailable (mods={:#x} vk={:#x}) — already in use by another app",
+                                id, mods, vk);
+                        }
+                        match id {
+                            Self::HOTKEY_RELOAD => reload_ok = ok,
+                            Self::HOTKEY_TOGGLE => toggle_ok = ok,
+                            Self::HOTKEY_LOCK => lock_ok = ok,
+                            _ => {}
+                        }
+                    }
                     let ret = PeekMessageW(&mut msg, None, 0, 0, PM_REMOVE);
                     if ret.as_bool() {
                         if msg.message == WM_HOTKEY {

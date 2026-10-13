@@ -26,6 +26,13 @@ pub fn start_drag(window: &tauri::WebviewWindow) {
     }
 }
 
+/// Whether this window is the one the user is working in, asked of Windows
+/// itself: the window's own record of its focus goes stale once it has been
+/// shown or put away without being activated.
+pub fn is_foreground(window: &tauri::WebviewWindow) -> bool {
+    hwnd_of(window).is_some_and(|hwnd| unsafe { GetForegroundWindow() } == hwnd)
+}
+
 /// Bring the overlay back on top without taking focus from the game.
 pub fn show_on_top_without_focus(window: &tauri::WebviewWindow) {
     let Some(hwnd) = hwnd_of(window) else { return };

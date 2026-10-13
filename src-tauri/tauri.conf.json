@@ -1,8 +1,9 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "A2Tools DPS Meter",
-  "version": "2.0.55",
-  "identifier": "com.a2tools.dps-meter",
+  "productName": "AION Logs",
+  "mainBinaryName": "aion-logs",
+  "version": "1.0.0",
+  "identifier": "com.aionlogs.meter",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
@@ -13,7 +14,7 @@
     "withGlobalTauri": true,
     "windows": [
       {
-        "title": "A2Tools DPS Meter",
+        "title": "AION Logs",
         "width": 400,
         "height": 300,
         "decorations": false,

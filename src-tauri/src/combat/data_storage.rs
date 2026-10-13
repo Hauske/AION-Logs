@@ -154,6 +154,10 @@ pub struct SkillCombatData {
     pub multi_hit_hits: i32,
     pub heal_amount: i32,
     pub hit_timestamps: Vec<i64>,
+    /// AION Logs: the damage of each hit, in step with `hit_timestamps`, so a
+    /// saved fight can tell how much was dealt while a buff was on rather
+    /// than spread the skill's total evenly over its hits.
+    pub hit_damages: Vec<i32>,
     pub spec_flags: [bool; 5],
 }
 
@@ -190,6 +194,7 @@ impl SkillCombatData {
             multi_hit_hits: self.multi_hit_hits,
             heal_amount: self.heal_amount,
             hit_timestamps: Vec::new(),
+            hit_damages: Vec::new(),
             spec_flags: self.spec_flags,
         }
     }
@@ -216,8 +221,22 @@ impl SkillCombatData {
         self.multi_hit_damage = self.multi_hit_damage.saturating_add(other.multi_hit_damage);
         self.multi_hit_hits += other.multi_hit_hits;
         self.heal_amount = self.heal_amount.saturating_add(other.heal_amount);
-        self.hit_timestamps.extend(other.hit_timestamps);
-        self.hit_timestamps.sort_unstable();
+        if self.hit_damages.len() == self.hit_timestamps.len()
+            && other.hit_damages.len() == other.hit_timestamps.len()
+        {
+            // Sorted as pairs, so each damage stays with its time.
+            let mut hits: Vec<(i64, i32)> = std::mem::take(&mut self.hit_timestamps)
+                .into_iter()
+                .zip(std::mem::take(&mut self.hit_damages))
+                .chain(other.hit_timestamps.into_iter().zip(other.hit_damages))
+                .collect();
+            hits.sort_by_key(|&(at, _)| at);
+            (self.hit_timestamps, self.hit_damages) = hits.into_iter().unzip();
+        } else {
+            self.hit_damages.clear();
+            self.hit_timestamps.extend(other.hit_timestamps);
+            self.hit_timestamps.sort_unstable();
+        }
         for (mine, theirs) in self.spec_flags.iter_mut().zip(other.spec_flags) {
             *mine |= theirs;
         }
@@ -248,6 +267,7 @@ impl SkillCombatData {
             multi_hit_hits: 0,
             heal_amount: 0,
             hit_timestamps: Vec::new(),
+            hit_damages: Vec::new(),
             spec_flags: [false; 5],
         }
     }
@@ -436,6 +456,10 @@ struct Inner {
     mob_hp_data: HashMap<i32, i32>,
     /// Live CURRENT HP per entity, from the in-place `8D <id> 02 01 00 <u32>` feed.
     mob_current_hp: HashMap<i32, i32>,
+    /// AION Logs: every change of an entity's current HP as (time, hp), so a
+    /// saved fight can draw the boss's real health rather than guess it from
+    /// the damage the capture happened to see.
+    mob_hp_history: HashMap<i32, Vec<(i64, i32)>>,
     known_player_ids: HashSet<i32>,
     /// Ids whose nickname came from an authoritative source (a 45/44 36 player
     /// spawn or the account char-list). Lower-confidence parsers may not steal
@@ -584,6 +608,7 @@ impl DataStorage {
                 heal_storage: HashMap::new(),
                 mob_hp_data: HashMap::new(),
                 mob_current_hp: HashMap::new(),
+                mob_hp_history: HashMap::new(),
                 known_player_ids: HashSet::new(),
                 authoritative_name_ids: HashSet::new(),
                 confirmed_summon_ids: HashSet::new(),
@@ -1621,6 +1646,11 @@ impl DataStorage {
         }
         let mut inner = self.inner.write();
         inner.mob_current_hp.insert(id, hp);
+        // Capped: a long fight on a boss sends a reading per hit.
+        let history = inner.mob_hp_history.entry(id).or_default();
+        if history.last().map(|&(_, last)| last) != Some(hp) && history.len() < 50_000 {
+            history.push((now_ms(), hp));
+        }
         if hp == 1 {
             inner.hp_floored_ids.insert(id);
         } else if hp > 1
@@ -1640,6 +1670,10 @@ impl DataStorage {
     /// unknown is this the answer; one whose spawn was seen goes by the table.
     pub fn is_hp_reset_dummy(&self, id: i32) -> bool {
         self.inner.read().hp_reset_dummy_ids.contains(&id)
+    }
+
+    pub fn get_mob_hp_history(&self, id: i32) -> Vec<(i64, i32)> {
+        self.inner.read().mob_hp_history.get(&id).cloned().unwrap_or_default()
     }
 
     pub fn get_mob_current_hp(&self, id: i32) -> Option<i32> {
@@ -1736,6 +1770,7 @@ impl DataStorage {
         inner.has_boss_in_segment = false;
         inner.mob_hp_data.clear();
         inner.mob_current_hp.clear();
+        inner.mob_hp_history.clear();
         inner.hp_floored_ids.clear();
         inner.hp_reset_dummy_ids.clear();
         inner.heal_storage.clear();
@@ -1755,6 +1790,7 @@ impl DataStorage {
         inner.has_boss_in_segment = false;
         inner.mob_hp_data.clear();
         inner.mob_current_hp.clear();
+        inner.mob_hp_history.clear();
         inner.hp_floored_ids.clear();
         inner.hp_reset_dummy_ids.clear();
         inner.heal_storage.clear();
@@ -1950,6 +1986,7 @@ fn apply_damage(inner: &mut Inner, pdp: &ParsedDamagePacket) {
         actor_data.regen += pdp.heal_amount() as i64;
     }
     skill_data.hit_timestamps.push(timestamp);
+    skill_data.hit_damages.push(total_dmg);
     for (i, &flag) in pdp.spec_flags().iter().enumerate() {
         if flag { skill_data.spec_flags[i] = true; }
     }

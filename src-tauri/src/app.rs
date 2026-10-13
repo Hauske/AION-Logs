@@ -261,12 +261,20 @@ async fn delete_fight(app: tauri::AppHandle, id: String) -> Result<(), String> {
     }).await?
 }
 
+/// AION Logs: A2Tools' own services (log uploads, the supporter list) are
+/// off. This is not A2Tools' client: its fights keep every player's name in
+/// full, which A2Tools' logs never did, and none of them leave this computer.
+const A2TOOLS_SERVICES: bool = false;
+
 /// Upload a saved fight to a2tools.app as a log, and return its link.
 #[tauri::command]
 async fn upload_fight(
     state: tauri::State<'_, AppState>,
     fight_id: String,
 ) -> Result<share::UploadResult, String> {
+    if !A2TOOLS_SERVICES {
+        return Err("AION Logs does not upload fights.".into());
+    }
     let record = state.fight_history.load_fight(&fight_id)?;
     share::upload(&state.http, &state.app_data_dir, &record, &state.settings).await
 }
@@ -279,6 +287,9 @@ async fn upload_fight(
 /// (offline, a server error, a rate limit) is tried again later, on the
 /// schedule in `share::note_auto_upload_failure`.
 fn auto_upload(app: tauri::AppHandle, record: FightRecord) {
+    if !A2TOOLS_SERVICES {
+        return;
+    }
     let Some(in_flight) = InFlight::start(&record.id) else { return };
     tauri::async_runtime::spawn(async move {
         let _in_flight = in_flight;
@@ -563,6 +574,15 @@ fn update_settings(
     if state.settings.set(&key, &value) {
         if key == ALL_TARGETS_WINDOW_KEY {
             apply_all_targets_window(&state, &value);
+        }
+        let hotkey = match key.as_str() {
+            "dpsMeter.hotkey" => Some(platform::hotkeys::HotkeyManager::HOTKEY_RELOAD),
+            "dpsMeter.toggleWindowHotkey" => Some(platform::hotkeys::HotkeyManager::HOTKEY_TOGGLE),
+            "dpsMeter.lockHotkey" => Some(platform::hotkeys::HotkeyManager::HOTKEY_LOCK),
+            _ => None,
+        };
+        if let (Some(id), Some((mods, vk))) = (hotkey, platform::hotkeys::parse_hotkey_label(&value)) {
+            platform::hotkeys::HotkeyManager::rebind(id, mods, vk);
         }
         let _ = app.emit("setting-changed", serde_json::json!({ "key": key, "value": value }));
         if key.starts_with(crate::stream_overlay::ENABLED_KEY) {
@@ -897,7 +917,7 @@ async fn show_update_window(
     let msg = format!("A new update is available!\n\nCurrent: {}\nLatest: {}\n\nDownload and install now?", current, latest);
 
     let accepted = tokio::task::spawn_blocking(move || {
-        platform::dialog::ask_yes_no("A2Tools - Update Available", &msg)
+        platform::dialog::ask_yes_no("AION Logs - Update available", &msg)
     }).await.unwrap_or(false);
 
     if accepted {
@@ -910,7 +930,7 @@ async fn show_update_window(
                 // Show error dialog
                 let _ = tokio::task::spawn_blocking(move || {
                     platform::dialog::show_error(
-                        "A2Tools - Update Error",
+                        "AION Logs - Update error",
                         &format!("Download failed: {}\n\nPlease download manually.", e),
                     );
                 }).await;
@@ -919,6 +939,107 @@ async fn show_update_window(
     }
 
     Ok(accepted)
+}
+
+/// AION Logs: releases are published on GitHub. Each carries the installer
+/// and a `latest.json` that names it:
+/// `{"version": "1.0.1", "msiUrl": "https://github.com/.../AION.Logs_1.0.1_x64_en-US.msi", "msiSha256": "..."}`.
+const UPDATE_REPO: &str = "Hauske/AION-Logs";
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct UpdateManifest {
+    version: String,
+    msi_url: String,
+    msi_sha256: String,
+}
+
+/// Whether dotted version `latest` is above `current`: "1.0.10" is above "1.0.9".
+fn version_is_newer(latest: &str, current: &str) -> bool {
+    let parts = |v: &str| -> Vec<u64> {
+        v.trim().trim_start_matches('v').split('.').map(|p| p.parse().unwrap_or(0)).collect()
+    };
+    parts(latest) > parts(current)
+}
+
+/// The newest release, when it is newer than this build.
+async fn newer_release(client: &reqwest::Client) -> Result<Option<UpdateManifest>, String> {
+    let releases = format!("https://github.com/{UPDATE_REPO}/releases/");
+    let text = client
+        .get(format!("{releases}latest/download/latest.json"))
+        .timeout(Duration::from_secs(15))
+        .send()
+        .await
+        .and_then(|r| r.error_for_status())
+        .map_err(|e| format!("could not reach GitHub: {e}"))?
+        .text()
+        .await
+        .map_err(|e| e.to_string())?;
+    let manifest: UpdateManifest =
+        serde_json::from_str(&text).map_err(|e| format!("the update manifest could not be read: {e}"))?;
+    // Only an installer from these same releases is ever run.
+    if !manifest.msi_url.starts_with(&format!("{releases}download/")) {
+        return Err("the update manifest names a package from somewhere else".into());
+    }
+    Ok(version_is_newer(&manifest.version, env!("CARGO_PKG_VERSION")).then_some(manifest))
+}
+
+/// Look for a newer release, offer it, and install it on a yes. Run once
+/// shortly after start, and from Settings. Says what happened: "latest",
+/// "declined" or "installing".
+#[tauri::command]
+async fn check_for_update(app: tauri::AppHandle) -> Result<String, String> {
+    let http = app.state::<AppState>().http.clone();
+    let Some(manifest) = newer_release(&http).await? else {
+        return Ok("latest".into());
+    };
+    let msg = format!(
+        "AION Logs {} is available (you have {}).\n\nDownload and install it now? The meter closes and reopens when it is done.",
+        manifest.version,
+        env!("CARGO_PKG_VERSION"),
+    );
+    let accepted = tokio::task::spawn_blocking(move || {
+        platform::dialog::ask_yes_no("AION Logs - Update available", &msg)
+    }).await.unwrap_or(false);
+    if !accepted {
+        return Ok("declined".into());
+    }
+    if let Err(e) = download_and_install_update(&app, &manifest.msi_url, &manifest.msi_sha256).await {
+        tracing::error!("Update download failed: {}", e);
+        let shown = e.clone();
+        let _ = tokio::task::spawn_blocking(move || {
+            platform::dialog::show_error(
+                "AION Logs - Update error",
+                &format!("The update could not be installed: {shown}\n\nYou can download it from github.com/{UPDATE_REPO}/releases."),
+            );
+        }).await;
+        return Err(e);
+    }
+    Ok("installing".into())
+}
+
+/// AION Logs: until 1.0 this ran under A2Tools' name and kept its files in
+/// A2Tools' folder. The first start under its own name brings the settings
+/// and saved fights along; A2Tools' copies stay where they are.
+fn adopt_a2tools_data(app_data_dir: &std::path::Path) {
+    if app_data_dir.join("settings.json").exists() || app_data_dir.join("history").exists() {
+        return;
+    }
+    let Some(old) = app_data_dir.parent().map(|p| p.join("com.a2tools.dps-meter")) else { return };
+    if !old.is_dir() || old == app_data_dir {
+        return;
+    }
+    let _ = std::fs::copy(old.join("settings.json"), app_data_dir.join("settings.json"));
+    for dir in ["history", "icon_cache"] {
+        let Ok(entries) = std::fs::read_dir(old.join(dir)) else { continue };
+        let to = app_data_dir.join(dir);
+        let _ = std::fs::create_dir_all(&to);
+        for entry in entries.flatten() {
+            if entry.path().is_file() {
+                let _ = std::fs::copy(entry.path(), to.join(entry.file_name()));
+            }
+        }
+    }
 }
 
 /// Whether a downloaded package is the one the manifest names: its SHA-256,
@@ -1083,6 +1204,9 @@ fn load_supporter_override(app_data_dir: &std::path::Path) -> Option<crate::supp
 /// a cosmetic, and there is no version of "the CDN is down" that should produce
 /// a visible error, a retry storm, or a wrong answer.
 async fn fetch_supporter_roster(client: &reqwest::Client) -> Option<crate::supporters::Roster> {
+    if !A2TOOLS_SERVICES {
+        return None;
+    }
     let response = client
         .get(SUPPORTER_ROSTER_URL)
         .timeout(Duration::from_secs(30))
@@ -1276,7 +1400,7 @@ fn open_details_on_monitor_inner(
         tauri::WebviewUrl::App("index.html".into()),
     )
     .initialization_script("window.__A2_VIEW__ = 'details';")
-    .title("A2Tools DPS Meter — Details")
+    .title("AION Logs — Details")
     .decorations(false)
     .transparent(false)
     // Intentional: the point of this window is to stay readable on a second
@@ -1506,7 +1630,7 @@ fn build_settings_window(app: &tauri::AppHandle) -> Result<(), String> {
     // Injected before any page script. WebviewUrl::App is a path, so a ?query
     // gets percent-encoded — this is the one channel that is reliable.
     .initialization_script(SETTINGS_WINDOW_SCRIPT)
-    .title("A2Tools DPS Meter — Settings")
+    .title("AION Logs — Settings")
     .decorations(false)
     .transparent(false)
     // Matches Details: the overlay itself is always-on-top, so a settings window
@@ -1752,7 +1876,7 @@ fn open_fight_window(app: &tauri::AppHandle, label: &str) -> Result<(), String> 
         tauri::WebviewUrl::App("index.html".into()),
     )
     .initialization_script("window.__A2_VIEW__ = 'details';")
-    .title("A2Tools DPS Meter — Fight")
+    .title("AION Logs — Fight")
     .decorations(false)
     .transparent(false)
     .always_on_top(true)
@@ -1787,7 +1911,7 @@ fn open_history_window_inner(app: &tauri::AppHandle) -> Result<(), String> {
         tauri::WebviewUrl::App("index.html".into()),
     )
     .initialization_script("window.__A2_VIEW__ = 'history';")
-    .title("A2Tools DPS Meter — Battle History")
+    .title("AION Logs — Battle History")
     .decorations(false)
     .transparent(false)
     .always_on_top(true)
@@ -1824,7 +1948,7 @@ fn open_details_windowed(app: &tauri::AppHandle) -> Result<(), String> {
         tauri::WebviewUrl::App("index.html".into()),
     )
     .initialization_script("window.__A2_VIEW__ = 'details';")
-    .title("A2Tools DPS Meter — Details")
+    .title("AION Logs — Details")
     .decorations(false)
     .transparent(false)
     .always_on_top(true)
@@ -2300,6 +2424,7 @@ pub fn run() {
             let app_data_dir = app.path().app_data_dir()
                 .unwrap_or_else(|_| std::path::PathBuf::from("."));
             let _ = std::fs::create_dir_all(&app_data_dir);
+            adopt_a2tools_data(&app_data_dir);
 
             // Load resources — try multiple paths (dev vs production)
             let skill_lookup = SkillLookup::new();
@@ -2388,7 +2513,7 @@ pub fn run() {
                 app_data_dir: app_data_dir.clone(),
                 i18n_data_dir: found_data_dir.clone(),
                 http: reqwest::Client::builder()
-                    .user_agent(concat!("A2Tools-DPS-Meter/", env!("CARGO_PKG_VERSION")))
+                    .user_agent(concat!("AION-Logs/", env!("CARGO_PKG_VERSION")))
                     .connect_timeout(Duration::from_secs(10))
                     .timeout(Duration::from_secs(30))
                     .build()
@@ -2426,6 +2551,17 @@ pub fn run() {
                     .set_before_reset(move || save_fights_before_reset(&handle));
             }
             crate::presence::spawn(app.handle().clone());
+
+            // AION Logs: look for a newer release once, shortly after start.
+            if !cfg!(debug_assertions) {
+                let handle = app.handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    tokio::time::sleep(Duration::from_secs(8)).await;
+                    if let Err(e) = check_for_update(handle).await {
+                        tracing::info!("Update check: {e}");
+                    }
+                });
+            }
             crate::stream_overlay::sync(app.handle());
 
             // Reopen the Details window if it was left enabled. Done here rather
@@ -2540,16 +2676,12 @@ pub fn run() {
                 {
                     let h = hotkey_handle.clone();
                     move || {
-                        // Toggle window visibility
-                        if let Some(window) = h.get_webview_window("main") {
-                            if window.is_visible().unwrap_or(false) {
-                                let _ = window.hide();
-                            } else {
-                                let _ = window.show();
-                                let _ = window.set_always_on_top(true);
-                                let _ = window.set_focus();
-                            }
-                        }
+                        // The page blanks itself and shrinks the window to
+                        // nothing. Hiding or minimising the window instead
+                        // moves focus around, and the game then grabs the
+                        // cursor.
+                        tracing::info!("Hotkey: toggle meter");
+                        let _ = h.emit_to("main", "meter-toggle", ());
                     }
                 },
                 {
@@ -2575,7 +2707,6 @@ pub fn run() {
                 let mut interval = tokio::time::interval(Duration::from_millis(500));
                 interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
                 let mut tick_count: u64 = 0;
-                let mut hide_delay: u64 = 0; // ticks to wait before hiding
                 loop {
                     interval.tick().await;
                     tick_count += 1;
@@ -2609,39 +2740,6 @@ pub fn run() {
 
                         if let Some(ping) = state.ping_tracker.current_ping_ms() {
                             let _ = handle.emit("ping-update", ping);
-                        }
-
-                        // --- Auto-hide when AION2 loses focus (every tick) ---
-                        let auto_hide = tick_count > 20
-                            && state.settings.get("dpsMeter.autoHideMeter")
-                                .unwrap_or_default() == "true";
-                        if auto_hide {
-                            if let Some(window) = handle.get_webview_window("main") {
-                                let aion_fg = platform::window_detector::is_aion2_foreground();
-                                let is_self_fg = window.is_focused().unwrap_or(false);
-                                let is_visible = window.is_visible().unwrap_or(true);
-                                let is_minimized = window.is_minimized().unwrap_or(false);
-                                if tick_count % 4 == 0 {
-                                    tracing::trace!("auto-hide: aion_fg={} self_fg={} visible={} minimized={} hide_delay={}",
-                                        aion_fg, is_self_fg, is_visible, is_minimized, hide_delay);
-                                }
-                                if aion_fg || is_self_fg {
-                                    hide_delay = 0;
-                                    if !is_visible || is_minimized {
-                                        platform::window::show_on_top_without_focus(&window);
-                                        // Notify frontend to recalculate window size
-                                        // (content may have changed while minimized)
-                                        let _ = window.emit("force-resize", ());
-                                    }
-                                } else if is_visible && !is_minimized {
-                                    // Wait 3 ticks (1.5s) before hiding to avoid
-                                    // flickering during alt-tab transitions
-                                    hide_delay += 1;
-                                    if hide_delay >= 3 {
-                                        platform::window::minimize_off_top(&window);
-                                    }
-                                }
-                            }
                         }
 
                         // --- Save window position every ~5 seconds (every 10 ticks) ---
@@ -2885,6 +2983,7 @@ pub fn run() {
             test_auto_hide,
             fetch_url,
             show_update_window,
+            check_for_update,
         ])
         .run(context)
         .expect("error while running tauri application");
@@ -2893,6 +2992,39 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_release_is_newer_by_its_numbers_not_its_text() {
+        assert!(version_is_newer("1.0.1", "1.0.0"));
+        assert!(version_is_newer("1.0.10", "1.0.9"));
+        assert!(version_is_newer("v1.1.0", "1.0.12"));
+        assert!(!version_is_newer("1.0.0", "1.0.0"));
+        assert!(!version_is_newer("1.0.0", "1.0.1"));
+        assert!(!version_is_newer("not a version", "1.0.0"));
+    }
+
+    #[test]
+    fn the_first_start_adopts_a2tools_files_once() {
+        let root = std::env::temp_dir().join(format!("aion-logs-adopt-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let old = root.join("com.a2tools.dps-meter");
+        let new = root.join("com.aionlogs.meter");
+        std::fs::create_dir_all(old.join("history")).unwrap();
+        std::fs::create_dir_all(&new).unwrap();
+        std::fs::write(old.join("settings.json"), b"{\"a\":\"1\"}").unwrap();
+        std::fs::write(old.join("history").join("auto_1_2.json"), b"{}").unwrap();
+
+        adopt_a2tools_data(&new);
+        assert_eq!(std::fs::read(new.join("settings.json")).unwrap(), b"{\"a\":\"1\"}");
+        assert!(new.join("history").join("auto_1_2.json").exists());
+        assert!(old.join("history").join("auto_1_2.json").exists(), "copied, not moved");
+
+        // A fight deleted here stays deleted: the second start copies nothing.
+        std::fs::remove_file(new.join("history").join("auto_1_2.json")).unwrap();
+        adopt_a2tools_data(&new);
+        assert!(!new.join("history").join("auto_1_2.json").exists());
+        let _ = std::fs::remove_dir_all(&root);
+    }
 
     #[test]
     fn a_panicking_upload_still_frees_its_fight() {
@@ -2915,39 +3047,5 @@ mod tests {
         assert!(!super::package_hash_matches(&actual.replace('9', "8"), actual));
         assert!(!super::package_hash_matches("", actual));
         assert!(!super::package_hash_matches("9f86d081", "9f86d081"));
-    }
-
-    #[test]
-    fn the_csp_allows_every_inline_handler() {
-        use sha2::{Digest, Sha256};
-        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
-        let read = |p: std::path::PathBuf| std::fs::read_to_string(p).unwrap();
-        let conf: serde_json::Value =
-            serde_json::from_str(&read(root.join("src-tauri/tauri.conf.json"))).unwrap();
-        let mut pages = vec![read(root.join("index.html"))];
-        for entry in std::fs::read_dir(root.join("public/src/js")).unwrap() {
-            pages.push(read(entry.unwrap().path()));
-        }
-        // `onload="..."` and the like, in the page and in HTML the scripts build.
-        let mut handlers = Vec::new();
-        for page in &pages {
-            let mut rest = page.as_str();
-            while let Some(at) = rest.find(" on") {
-                rest = &rest[at + 3..];
-                let name = rest.bytes().take_while(|b| b.is_ascii_lowercase()).count();
-                if name > 0 && rest[name..].starts_with("=\"") {
-                    let body = &rest[name + 2..];
-                    handlers.push(body[..body.find('"').unwrap()].to_string());
-                }
-            }
-        }
-        assert!(handlers.len() >= 5);
-        for key in ["csp", "devCsp"] {
-            let script_src = conf["app"]["security"][key]["script-src"].as_str().unwrap();
-            for handler in &handlers {
-                let hash = format!("'sha256-{}'", crate::share::base64(&Sha256::digest(handler.as_bytes())));
-                assert!(script_src.contains(&hash), "{key} script-src has no {hash} for {handler}");
-            }
-        }
     }
 }

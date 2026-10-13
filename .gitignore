@@ -62,3 +62,9 @@ settings.properties
 /packaging/arch/src/
 /packaging/arch/pkg/
 /packaging/arch/*.pkg.tar.zst
+
+# Local fight files for UI development (ui/src/lib/mock.ts)
+/ui/mock/
+
+# Installer and update manifest built by release.ps1
+/release/

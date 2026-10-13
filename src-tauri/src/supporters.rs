@@ -315,6 +315,7 @@ mod tests {
                 .map(|(name, dbid)| DetailsActorSummary {
                     actor_id: 1,
                     nickname: name.into(),
+                    is_local: false,
                     job: String::new(),
                     job_id: 0,
                     party_heal: 0,
@@ -337,6 +338,8 @@ mod tests {
             dungeon_id: 0,
             server_id: 0,
             buffs: None,
+            hp_history: Vec::new(),
+            killed: None,
         }
     }
 

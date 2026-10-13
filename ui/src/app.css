@@ -1,0 +1,124 @@
+:root {
+  --bg: #18181b;
+  --panel: #212124;
+  --panel-2: #2a2a2e;
+  --line: #34343a;
+  --text: #e7e7ea;
+  --muted: #9a9aa5;
+  --faint: #6c6c78;
+  --accent: #c084fc;
+  --danger: #ef6b6b;
+  --row-h: 28px;
+  font-family: "Pretendard", "Segoe UI", system-ui, sans-serif;
+  font-size: 13px;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  margin: 0;
+  height: 100%;
+}
+
+body {
+  background: var(--bg);
+  overflow: hidden;
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: default;
+}
+
+/* The meter window is transparent; only the meter itself paints. */
+body.meter {
+  background: transparent;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+}
+
+input {
+  font: inherit;
+  color: inherit;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-thumb {
+  background: #45454d;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* Shared bar-table look: a row whose background bar shows its share. */
+.bar-row {
+  position: relative;
+  display: grid;
+  align-items: center;
+  height: var(--row-h);
+  padding: 0 8px 0 4px;
+  gap: 0;
+  white-space: nowrap;
+}
+.bar-row > .bar {
+  position: absolute;
+  inset: 0 auto 0 0;
+  pointer-events: none;
+  transition: width 0.4s ease;
+}
+.bar-row > :not(.bar) {
+  position: relative;
+  min-width: 0;
+}
+.bar-row .num {
+  text-align: right;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7);
+}
+.bar-row .name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7);
+}
+.bar-row .name > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.col-head {
+  display: grid;
+  align-items: center;
+  height: 22px;
+  padding: 0 8px 0 4px;
+  font-size: 11px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+.col-head > div {
+  text-align: right;
+}
+.col-head > div:first-child {
+  text-align: left;
+  padding-left: 4px;
+}
+.unit {
+  font-size: 0.82em;
+  opacity: 0.75;
+  margin-left: 1px;
+}

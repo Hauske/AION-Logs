@@ -191,6 +191,23 @@ impl FightHistoryManager {
                 if let Ok(json) = std::fs::read_to_string(&path) {
                     if let Ok(record) = serde_json::from_str::<FightRecord>(&json) {
                         let member_jobs = record.member_jobs();
+                        // The game's word that the boss died, when the fight
+                        // has it. Otherwise judged from the damage: enough to
+                        // cover its health, a little short still counting
+                        // since a few hits are always missed.
+                        let max_hp = record.details.max_hp as f64;
+                        let dealt = record.details.total_target_damage as f64;
+                        let emptied = record.hp_history.last().is_some_and(|&(_, hp)| hp == 0);
+                        let covered = max_hp > 0.0 && dealt >= max_hp * 0.98;
+                        let outcome = if record.is_train {
+                            ""
+                        } else if record.killed == Some(true) || emptied || covered {
+                            "clear"
+                        } else if record.killed.is_some() || max_hp > 0.0 {
+                            "wipe"
+                        } else {
+                            ""
+                        };
                         summaries.push(FightSummary {
                             id: record.id,
                             boss_name: record.boss_name,
@@ -206,6 +223,7 @@ impl FightHistoryManager {
                             mob_code: record.mob_code,
                             dungeon_id: record.dungeon_id,
                             member_jobs,
+                            outcome: outcome.to_string(),
                         });
                     }
                 }
