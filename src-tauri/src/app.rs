@@ -3003,6 +3003,18 @@ mod tests {
         assert!(!version_is_newer("not a version", "1.0.0"));
     }
 
+    /// Against the real releases: `cargo test -- --ignored github`.
+    #[tokio::test]
+    #[ignore = "reaches GitHub"]
+    async fn the_published_manifest_on_github_reads() {
+        let client = reqwest::Client::new();
+        let found = newer_release(&client).await.expect("the manifest is there and names our own installer");
+        if let Some(manifest) = found {
+            assert!(version_is_newer(&manifest.version, env!("CARGO_PKG_VERSION")));
+            assert_eq!(manifest.msi_sha256.len(), 64);
+        }
+    }
+
     #[test]
     fn the_first_start_adopts_a2tools_files_once() {
         let root = std::env::temp_dir().join(format!("aion-logs-adopt-{}", std::process::id()));
