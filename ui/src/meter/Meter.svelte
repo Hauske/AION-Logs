@@ -5,6 +5,7 @@
   import { abbr, clock, full, pct } from "../lib/format";
   import { classOf } from "../lib/classes";
   import { getBool, getNumber, getSetting, KEYS, setSetting, settings, startSettings } from "../lib/settings.svelte";
+  import { startUpdates, update } from "../lib/update.svelte";
   import type { CaptureStatus, DpsData, TargetDetails } from "../lib/types";
   import ClassIcon from "../components/ClassIcon.svelte";
   import SkillTable from "../components/SkillTable.svelte";
@@ -193,6 +194,7 @@
 
   onMount(() => {
     startSettings();
+    startUpdates();
     api.snapshot().then((s) => (snap = s)).catch(() => {});
     const stops = [
       on<DpsData>("dps-update", (s) => {
@@ -272,7 +274,12 @@
     <button class="icon" title="Reset ({getSetting(KEYS.resetHotkey)}). Hide the meter: {getSetting(KEYS.hideHotkey)}" onclick={reset}>
       <svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8" /><path d="M3 3v5h5" /></svg>
     </button>
-    <button class="icon" title="Logs" onclick={() => api.openLogs()}>
+    <button
+      class="icon"
+      class:news={update.version != null}
+      title={update.version ? `Logs. Version ${update.version} is available: update from there.` : "Logs"}
+      onclick={() => api.openLogs()}
+    >
       <svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10" /></svg>
     </button>
   </header>
@@ -406,6 +413,20 @@
   }
   .icon.on {
     color: var(--accent);
+  }
+  /* A dot on the Logs button: a newer version is waiting there. */
+  .icon.news {
+    position: relative;
+  }
+  .icon.news::after {
+    content: "";
+    position: absolute;
+    top: 3px;
+    right: 3px;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--accent);
   }
   .icon svg {
     width: 15px;

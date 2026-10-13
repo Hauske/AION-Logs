@@ -101,8 +101,12 @@ export const api = {
   quit: () => quiet(invoke<void>("quit_app"), undefined),
   isAdmin: () => quiet(invoke<boolean>("is_admin"), true),
   appVersion: () => quiet(invoke<string>("get_app_version"), ""),
-  /** Offers a newer release when there is one: "latest" | "declined" | "installing". */
-  checkForUpdate: () => invoke<string>("check_for_update"),
+  // Updates: see update.svelte.ts.
+  /** Looks now: the newer release's version, or null when this is the newest. */
+  checkForUpdate: () => invoke<string | null>("check_for_update"),
+  availableUpdate: () => quiet(invoke<string | null>("available_update"), null),
+  /** Resolves only on failure: on success the app has closed for the installer. */
+  installUpdate: () => invoke<void>("install_update"),
   openUrl: (url: string) => quiet(invoke<void>("open_url", { url }), undefined),
 
   // Icon cache on disk (base64 PNG)

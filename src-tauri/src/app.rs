@@ -946,7 +946,7 @@ async fn show_update_window(
 /// `{"version": "1.0.1", "msiUrl": "https://github.com/.../AION.Logs_1.0.1_x64_en-US.msi", "msiSha256": "..."}`.
 const UPDATE_REPO: &str = "Hauske/AION-Logs";
 
-#[derive(serde::Deserialize)]
+#[derive(Clone, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct UpdateManifest {
     version: String,
@@ -984,38 +984,53 @@ async fn newer_release(client: &reqwest::Client) -> Result<Option<UpdateManifest
     Ok(version_is_newer(&manifest.version, env!("CARGO_PKG_VERSION")).then_some(manifest))
 }
 
-/// Look for a newer release, offer it, and install it on a yes. Run once
-/// shortly after start, and from Settings. Says what happened: "latest",
-/// "declined" or "installing".
+/// The newer release the last check found, for a window opened after it.
+static AVAILABLE_UPDATE: std::sync::Mutex<Option<UpdateManifest>> = std::sync::Mutex::new(None);
+/// An install runs once, however many windows ask for it.
+static INSTALLING_UPDATE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+/// How often a running meter looks again.
+const UPDATE_CHECK_EVERY: Duration = Duration::from_secs(60 * 60);
+
+/// Look for a newer release and tell every window what was found
+/// (`update-available`): its version, or nothing when this is the newest.
+/// Run shortly after start, every hour, and from Settings. The interface
+/// offers it; nothing is downloaded until `install_update`.
 #[tauri::command]
-async fn check_for_update(app: tauri::AppHandle) -> Result<String, String> {
+async fn check_for_update(app: tauri::AppHandle) -> Result<Option<String>, String> {
     let http = app.state::<AppState>().http.clone();
-    let Some(manifest) = newer_release(&http).await? else {
-        return Ok("latest".into());
-    };
-    let msg = format!(
-        "AION Logs {} is available (you have {}).\n\nDownload and install it now? The meter closes and reopens when it is done.",
-        manifest.version,
-        env!("CARGO_PKG_VERSION"),
-    );
-    let accepted = tokio::task::spawn_blocking(move || {
-        platform::dialog::ask_yes_no("AION Logs - Update available", &msg)
-    }).await.unwrap_or(false);
-    if !accepted {
-        return Ok("declined".into());
+    let found = newer_release(&http).await?;
+    let version = found.as_ref().map(|m| m.version.clone());
+    *AVAILABLE_UPDATE.lock().unwrap_or_else(|e| e.into_inner()) = found;
+    let _ = app.emit("update-available", &version);
+    Ok(version)
+}
+
+/// The version the last check found, if it found one.
+#[tauri::command]
+fn available_update() -> Option<String> {
+    AVAILABLE_UPDATE.lock().unwrap_or_else(|e| e.into_inner()).as_ref().map(|m| m.version.clone())
+}
+
+/// Download the release the last check found, install it and reopen. How far
+/// the download is goes out as `download-progress`. Returns only on failure:
+/// on success the meter has closed for the installer.
+#[tauri::command]
+async fn install_update(app: tauri::AppHandle) -> Result<(), String> {
+    use std::sync::atomic::Ordering;
+    let manifest = AVAILABLE_UPDATE
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .clone()
+        .ok_or("there is no update to install")?;
+    if INSTALLING_UPDATE.swap(true, Ordering::SeqCst) {
+        return Err("the update is already being installed".into());
     }
-    if let Err(e) = download_and_install_update(&app, &manifest.msi_url, &manifest.msi_sha256).await {
-        tracing::error!("Update download failed: {}", e);
-        let shown = e.clone();
-        let _ = tokio::task::spawn_blocking(move || {
-            platform::dialog::show_error(
-                "AION Logs - Update error",
-                &format!("The update could not be installed: {shown}\n\nYou can download it from github.com/{UPDATE_REPO}/releases."),
-            );
-        }).await;
-        return Err(e);
+    let result = download_and_install_update(&app, &manifest.msi_url, &manifest.msi_sha256).await;
+    INSTALLING_UPDATE.store(false, Ordering::SeqCst);
+    if let Err(e) = &result {
+        tracing::error!("Update failed: {e}");
     }
-    Ok("installing".into())
+    result
 }
 
 /// AION Logs: until 1.0 this ran under A2Tools' name and kept its files in
@@ -2552,13 +2567,17 @@ pub fn run() {
             }
             crate::presence::spawn(app.handle().clone());
 
-            // AION Logs: look for a newer release once, shortly after start.
+            // AION Logs: look for a newer release shortly after start, and
+            // again every hour for a meter left running.
             if !cfg!(debug_assertions) {
                 let handle = app.handle().clone();
                 tauri::async_runtime::spawn(async move {
                     tokio::time::sleep(Duration::from_secs(8)).await;
-                    if let Err(e) = check_for_update(handle).await {
-                        tracing::info!("Update check: {e}");
+                    loop {
+                        if let Err(e) = check_for_update(handle.clone()).await {
+                            tracing::info!("Update check: {e}");
+                        }
+                        tokio::time::sleep(UPDATE_CHECK_EVERY).await;
                     }
                 });
             }
@@ -2984,6 +3003,8 @@ pub fn run() {
             fetch_url,
             show_update_window,
             check_for_update,
+            available_update,
+            install_update,
         ])
         .run(context)
         .expect("error while running tauri application");

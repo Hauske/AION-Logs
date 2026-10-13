@@ -68,3 +68,6 @@ settings.properties
 
 # Installer and update manifest built by release.ps1
 /release/
+
+# The Logs window is source, not log output (see "logs" above)
+!/ui/src/logs/

@@ -72,7 +72,10 @@ export function answer(cmd: string, args?: Record<string, unknown>): unknown {
     case "get_capture_status":
       return { locked: true, port: 12345, device: "Ethernet", localPlayerId: snapshot().localPlayerId, characterName: "Yuus", characterNameFromGame: true };
     case "get_app_version": return "dev";
-    case "check_for_update": return "latest";
+    // ?update=<version> previews an update being offered.
+    case "check_for_update":
+    case "available_update": return params.get("update");
+    case "install_update": return new Promise(() => {});
     case "is_admin": return true;
     case "take_pending_details_request": return params.get("fight") ? { kind: "fight", fightId: params.get("fight") } : null;
     case "read_cached_icon": return null;

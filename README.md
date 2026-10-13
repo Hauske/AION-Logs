@@ -24,10 +24,11 @@ numbers in their place until you change zone.
 
 ### Updates
 
-When the meter starts it looks for a newer release here on GitHub. If there is
-one it asks, and on a yes it downloads the installer, checks it against the
-release's checksum, installs it and reopens. Settings → **Check now** does the
-same on demand.
+When the meter starts, and every hour after, it looks for a newer release here
+on GitHub. If there is one, an **Update now** button appears in the Logs
+window, and a dot on the meter's Logs button. Nothing installs until you click
+it: then it downloads the installer, checks it against the release's checksum,
+installs it and reopens. Settings → **Check now** looks on demand.
 
 ## What it shows
 
