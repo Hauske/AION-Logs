@@ -32,14 +32,31 @@ export interface SkillRow extends HitStats {
 export const CAST_GAP_MS = 700;
 
 /**
- * When a skill was used, from when it hit: the capture records hits, not
- * button presses, so a cast is a run of hits less than `CAST_GAP_MS` apart.
+ * Skills, by family (the code's first four digits), that are cast again
+ * sooner than `CAST_GAP_MS`, and the gap that does separate their casts.
+ * Condemnation sends one record per cast, its four hits inside it; when its
+ * cooldown resets it is cast again 0.5 to 0.7 s after the last one, which the
+ * usual gap merged into a single cast.
  */
-export function castTimes(timestamps: number[]): { t: number; hits: number }[] {
+const CAST_GAP_BY_FAMILY: Record<string, number> = {
+  "1735": 300,
+};
+
+/** The gap between two casts of a skill. */
+export function castGap(code: number): number {
+  return CAST_GAP_BY_FAMILY[String(code).slice(0, 4)] ?? CAST_GAP_MS;
+}
+
+/**
+ * When a skill was used, from when it hit: the capture records hits, not
+ * button presses, so a cast is a run of hits less than `castGap(code)` apart.
+ */
+export function castTimes(timestamps: number[], code: number): { t: number; hits: number }[] {
+  const gap = castGap(code);
   const out: { t: number; hits: number }[] = [];
   let last = -Infinity;
   for (const t of [...timestamps].sort((a, b) => a - b)) {
-    if (t - last > CAST_GAP_MS) out.push({ t, hits: 0 });
+    if (t - last > gap) out.push({ t, hits: 0 });
     out[out.length - 1].hits += 1;
     last = t;
   }
@@ -119,7 +136,7 @@ export function buildPlayers(
 
   for (const entry of byActor.values()) {
     for (const row of entry.skills.values()) {
-      if (!row.isDot) row.casts = castTimes(row.timestamps).length;
+      if (!row.isDot) row.casts = castTimes(row.timestamps, row.code).length;
     }
   }
 
@@ -300,7 +317,7 @@ export function buildCasts(player: PlayerRow, withPassives = false): Cast[] {
   for (const s of player.skills) {
     if (s.isDot || !s.timestamps.length) continue;
     if (!withPassives && isPassiveSkill(s.code)) continue;
-    for (const c of castTimes(s.timestamps)) casts.push({ code: s.code, name: s.name, t: c.t, hits: c.hits });
+    for (const c of castTimes(s.timestamps, s.code)) casts.push({ code: s.code, name: s.name, t: c.t, hits: c.hits });
   }
   return casts.sort((a, b) => a.t - b.t);
 }
